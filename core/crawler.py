@@ -33,6 +33,14 @@ class DlWorker(threading.Thread):
         time.sleep(a_short_while)
         while not q.empty():
             part_source, part = q.get()
+            
+            # May already be there in previous incomplete download
+            filename = '../Videos/{}/{}'.format(video_title, part)
+            if os.path.exists(filename):
+                file_parts[part]['dl'] = True
+                print('file part - %-16s already exists' % part)
+                continue
+
             return_code = 1
             while return_code != 0:
                 return_code = self.wget(source=part_source, name=part, method='built-in')
@@ -139,7 +147,7 @@ def merge_file_parts():
                 with open(video_folder + k, 'rb') as infile:
                     outfile.write(infile.read())
             else:
-                print('skip file parts - {}'.format(k))
+                print('skip file part - {}'.format(k))
     
 def crawler_proceed():
     url = sys.argv[1]
