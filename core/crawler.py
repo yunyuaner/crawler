@@ -33,7 +33,7 @@ class DlWorker(threading.Thread):
         time.sleep(a_short_while)
         while not q.empty():
             part_source, part = q.get()
-            
+
             # May already be there in previous incomplete download
             filename = '../Videos/{}/{}'.format(video_title, part)
             if os.path.exists(filename):
@@ -114,10 +114,10 @@ def extract_descripter_source(url, ua = user_agent):
 
         i = 0
         for url in urls:
-            response = s.get(url)            
+            response = s.get(url)
             descriptor_content[i] = list(response.text.split('\n'))
-            i += 1    
-    
+            i += 1
+
     s.close()
     return prefix[0]
 
@@ -148,7 +148,7 @@ def merge_file_parts():
                     outfile.write(infile.read())
             else:
                 print('skip file part - {}'.format(k))
-    
+
 def crawler_proceed():
     url = sys.argv[1]
     prefix = extract_descripter_source(url)
@@ -164,4 +164,4 @@ def crawler_proceed():
     merge_file_parts()
 
 if __name__ == '__main__':
-    crawler_proceed()    
+    crawler_proceed()
