@@ -7,6 +7,8 @@ import threading
 import subprocess
 import time
 import random
+import subprocess
+import shutil
 from queue import Queue
 from bs4 import BeautifulSoup
 
@@ -149,6 +151,19 @@ def merge_file_parts():
             else:
                 print('skip file part - {}'.format(k))
 
+def transcode_video():
+    os.environ["PATH"] = os.environ.get("PATH", "") + ";C:\\Program Files (x86)\\FormatFactory"
+    video_folder = '../Videos/'+video_title+'/'
+    src_file = video_folder + video_title+'.ts'
+    target_file = "D:\\百度云盘\\Videos\\" + video_title + '.mp4'
+
+    p = subprocess.Popen(["ffmpeg", "-i", src_file, "-c:v", "h264_qsv", "-c:a", "aac", "-strict", "-2", target_file], 
+        stdout=subprocess.PIPE)
+    for c in iter(lambda: p.stdout.read(1), b''): 
+        sys.stdout.buffer.write(c)
+
+    shutil.rmtree(path=video_folder, ignore_errors=True)
+
 def crawler_proceed():
     url = sys.argv[1]
     prefix = extract_descripter_source(url)
@@ -162,6 +177,7 @@ def crawler_proceed():
         w.join()
 
     merge_file_parts()
+    transcode_video()
 
 if __name__ == '__main__':
     crawler_proceed()
