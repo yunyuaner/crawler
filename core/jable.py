@@ -32,6 +32,7 @@ default_tread_count = 10
 key_file_name = ''
 iv = ''
 key = ''
+encrypted_files = []
 
 class DlWorker(threading.Thread):
     def __init__(self):
@@ -79,10 +80,6 @@ class DlWorker(threading.Thread):
             if r.status_code != 200:
                 s.close()
                 return -1*r.status_code
-
-            # folder_name = '../Videos/{}'.format(video_title)
-            # if (not os.path.exists(folder_name)):
-            #     os.mkdir(folder_name)
 
             with open(folder_name + "/" + name, 'wb') as fd:
                 for chunk in r.iter_content(chunk_size=128):
@@ -132,7 +129,7 @@ def extract_descripter_source(url, ua = user_agent):
             
             _, _, key_file_name = matches[0].partition('=')
             key_file_name = key_file_name.strip("\"")
-            # print(key_file_name)
+            print(key_file_name)
 
             # parse iv value
             regexp = re.compile(r'IV=0x[0-9a-zA-Z]+')
@@ -142,7 +139,7 @@ def extract_descripter_source(url, ua = user_agent):
                 return None
 
             _, _, iv = matches[0].partition('=')
-            # print(iv)
+            print(iv)
             
             s.close()
             return descriptor_url
@@ -166,17 +163,43 @@ def retrive_key(key_file_url):
     s.close()
     return content
 
-def decrypt(file_part, key, iv):
-    ct_bytes = b''
+def decrypt_all():
+    def decrypt(file_part, key, iv):
+        ct_bytes = b''
 
-    with open(file_part, mode='rb') as file:
-        ct_bytes = file.read()
+        basename = os.path.basename(file_part)
+        print('decrypting file {}'.format(basename))
+
+        with open(file_part, mode='rb') as file:
+            ct_bytes = file.read()
+        
+        decipher = AES.new(key, AES.MODE_CBC, iv)
+        pt = decipher.decrypt(ct_bytes)
+            
+        decrypted_file_name = os.path.join(os.path.dirname(file_part), "decrypted-"+basename)
+        with open(decrypted_file_name, mode='w+b') as file:
+            file.write(pt)    
     
-    decipher = AES.new(key, AES.MODE_CBC, iv)
-    pt = decipher.decrypt(ct_bytes)
+    global encrypted_files
+
+    with os.scandir(folder_name) as it:
+        for entry in it:
+            if not entry.name.startswith('.') and entry.is_file():                
+                encrypted_files.append(int(entry.name[:entry.name.rfind('.')]))
     
-    with open(file_part, mode='w+b') as file:
-        file.write(pt)
+    encrypted_files.sort()
+
+    for f in encrypted_files:
+        decrypt(os.path.join(folder_name, str(f)+'.ts'), key, iv)
+
+def merge_file_parts():
+    with open(os.path.join(folder_name, video_title+'.ts'), 'wb') as outfile:
+        for f in encrypted_files:
+            # print('Merging {}'.format(k))
+            decrypted_file = os.path.join(folder_name, "decrypted-"+str(f)+'.ts')
+            # print(decrypted_file)
+            with open(decrypted_file, 'rb') as infile:
+                outfile.write(infile.read())
 
 def dl_start(worker_count=default_tread_count):
     global workers
@@ -190,7 +213,8 @@ if __name__ == '__main__':
     descriptor_url = extract_descripter_source(url)
     url_prefix = descriptor_url[0:descriptor_url.rfind("/")+1]
     key = retrive_key(url_prefix+"/"+key_file_name)
-    iv = hexlify(iv)
+    # iv is like 0x439f3527d1f6ec3c04bd876ce1359c82, first remove the leading '0x'
+    iv = unhexlify(iv[2:])
     
     parse_file_parts(url_prefix)
 
@@ -204,3 +228,6 @@ if __name__ == '__main__':
 
     for w in workers:
         w.join()
+
+    decrypt_all()
+    merge_file_parts()
