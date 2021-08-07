@@ -48,7 +48,7 @@ class DlWorker(threading.Thread):
             part_source, part = q.get()
 
             # May already be there in previous incomplete download
-            filename = '../Videos/{}/{}'.format(video_title, part)
+            filename = '../Videos/{}/{}'.format(descriptor_name_without_suffix, part)
             if os.path.exists(filename):
                 file_parts[part]['dl'] = True
                 print('file part - %-16s already exists' % part)
