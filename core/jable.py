@@ -6,6 +6,7 @@ import time
 import threading
 import random
 import subprocess
+import shutil
 from Crypto.Cipher import AES
 from binascii import hexlify, unhexlify
 from queue import Queue
@@ -16,6 +17,9 @@ from queue import Queue
 
     sample video part url:
     https://kingdom-b.alonestreaming.com/hls/Wxjts3E6TSYZt8iSzcLx3Q/1627112054/16000/16180/161801.ts
+
+    manually decrypt video file part:
+    openssl enc -d -aes-128-cbc -in 72500.ts -out 72500.decrypt.ts -K 118E75141BB13A2D85356C1AAC41825A -iv c553d41043239f1a5e0be29e2ea4caf0 
 '''
 
 fail_count = 0
@@ -48,7 +52,7 @@ class DlWorker(threading.Thread):
             part_source, part = q.get()
 
             # May already be there in previous incomplete download
-            filename = '../Videos/{}/{}'.format(descriptor_name_without_suffix, part)
+            filename = '../Videos/{}/{}'.format(video_title, part)
             if os.path.exists(filename):
                 file_parts[part]['dl'] = True
                 print('file part - %-16s already exists' % part)
@@ -109,6 +113,7 @@ def extract_descripter_source(url, ua = user_agent):
         content_tag_start = meta.index("content=") + len("content=\"")
         content_tag_end = meta.rfind("\"")
         video_title = meta[content_tag_start:content_tag_end]
+        print('Video Title - {}'.format(video_title))
 
         regexp = re.compile(r'var hlsUrl =.*;')
         contents = regexp.findall(response.text)
@@ -129,7 +134,7 @@ def extract_descripter_source(url, ua = user_agent):
             
             _, _, key_file_name = matches[0].partition('=')
             key_file_name = key_file_name.strip("\"")
-            print(key_file_name)
+            # print(key_file_name)
 
             # parse iv value
             regexp = re.compile(r'IV=0x[0-9a-zA-Z]+')
@@ -139,13 +144,51 @@ def extract_descripter_source(url, ua = user_agent):
                 return None
 
             _, _, iv = matches[0].partition('=')
-            print(iv)
+            # print(iv)
             
             s.close()
             return descriptor_url
+    else:
+        print(response.text)
 
     s.close()
     return None
+
+def parse_descriptor(descriptor_url):  
+    global key_file_name
+    global descriptor_contents
+    global descriptor_name_without_suffix
+    global iv
+
+    descriptor_name_without_suffix = descriptor_url[descriptor_url.rfind("/")+1:len(descriptor_url)-len(".m3u8")]
+    s = requests.Session()
+    s.headers['User-Agent'] = user_agent    
+    response = s.get(descriptor_url)
+    # print(response.text)
+    regexp = re.compile(descriptor_name_without_suffix+r'[0-9]+\.ts')
+    descriptor_contents = regexp.findall(response.text)
+    s.close()
+
+    # parse key file
+    regexp = re.compile(r'URI="[0-9a-zA-Z]+\.ts"')
+    matches = regexp.findall(response.text)
+    if len(matches) == 0:
+        print('key file not found!')
+        return None
+    
+    _, _, key_file_name = matches[0].partition('=')
+    key_file_name = key_file_name.strip("\"")
+    print('key file - ', key_file_name)
+
+    # parse iv value
+    regexp = re.compile(r'IV=0x[0-9a-zA-Z]+')
+    matches = regexp.findall(response.text)
+    if len(matches) == 0:
+        print('iv not found!')
+        return None
+
+    _, _, iv = matches[0].partition('=')
+    print('iv - ', iv)
 
 def parse_file_parts(url_prefix):    
     for part_name in descriptor_contents:
@@ -208,10 +251,37 @@ def dl_start(worker_count=default_tread_count):
         workers.append(worker)
         worker.start()
 
-if __name__ == '__main__':
-    url = sys.argv[1]
-    descriptor_url = extract_descripter_source(url)
+def transcode_video():
+    os.environ["PATH"] = os.environ.get("PATH", "") + ";C:\\Program Files (x86)\\FormatFactory"
+    # video_folder = os.path.join(folder_name, video_title)
+    src_file = os.path.join(folder_name, video_title+'.ts')
+    target_file = "C:\\Users\\yunyuaner\\Documents\\BaiduYun\\Videos\\jable.tv\\" + video_title + '.mp4'
+
+    p = subprocess.Popen(["ffmpeg", "-i", src_file, "-c:v", "h264_qsv", "-c:a", "aac", "-strict", "-2", target_file], 
+        stdout=subprocess.PIPE)
+    for c in iter(lambda: p.stdout.read(1), b''): 
+        sys.stdout.buffer.write(c)
+
+    shutil.rmtree(path=folder_name, ignore_errors=True)
+
+def crawler_proceed():
+    global key
+    global iv
+    global folder_name
+    global video_title
+    
+    # url = sys.argv[1]
+    # descriptor_url = extract_descripter_source(url)
+    # if descriptor_url == None:
+    #     print('No video descriptor found from url - {}'.format(url))
+    #     sys.exit()
+
+    descriptor_url = sys.argv[1]
+    video_title = sys.argv[2]
+
+    parse_descriptor(descriptor_url)
     url_prefix = descriptor_url[0:descriptor_url.rfind("/")+1]
+
     key = retrive_key(url_prefix+"/"+key_file_name)
     # iv is like 0x439f3527d1f6ec3c04bd876ce1359c82, first remove the leading '0x'
     iv = unhexlify(iv[2:])
@@ -231,3 +301,7 @@ if __name__ == '__main__':
 
     decrypt_all()
     merge_file_parts()
+    transcode_video()
+
+if __name__ == '__main__':
+    crawler_proceed()
